@@ -35,8 +35,6 @@ Create a new file in your forked repo:
 Paste the following code:
 
 ```yaml
-name: Continuous Persistent VPS
-
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours
@@ -51,8 +49,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set hostname to biralo
-        run: sudo hostnamectl set-hostname biralo
+      - name: Set hostname to itz_ytansh
+        run: sudo hostnamectl set-hostname itz_ytansh
 
       - name: Download VPS backup (if any)
         uses: actions/download-artifact@v4
