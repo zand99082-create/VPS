@@ -1,0 +1,101 @@
+name: Debug Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Install Android SDK
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
+        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip commandlinetools-linux-11076708_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        yes | sdkmanager --licenses
+        sdkmanager "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
+
+    - name: 🔍 Check resource files
+      run: |
+        echo "=========================================="
+        echo "📂 Checking resource files..."
+        echo "=========================================="
+        
+        # بررسی وجود فایل‌ها
+        echo "1️⃣ Checking AndroidManifest.xml..."
+        if [ -f "app/src/main/AndroidManifest.xml" ]; then
+          echo "✅ AndroidManifest.xml exists"
+          cat app/src/main/AndroidManifest.xml | head -10
+        else
+          echo "❌ AndroidManifest.xml NOT FOUND!"
+        fi
+        
+        echo ""
+        echo "2️⃣ Checking layout files..."
+        if [ -f "app/src/main/res/layout/activity_main.xml" ]; then
+          echo "✅ activity_main.xml exists"
+          cat app/src/main/res/layout/activity_main.xml | head -10
+        else
+          echo "❌ activity_main.xml NOT FOUND!"
+        fi
+        
+        echo ""
+        echo "3️⃣ Checking values files..."
+        if [ -f "app/src/main/res/values/colors.xml" ]; then
+          echo "✅ colors.xml exists"
+          cat app/src/main/res/values/colors.xml
+        else
+          echo "❌ colors.xml NOT FOUND!"
+        fi
+        
+        echo ""
+        echo "4️⃣ Checking Java files..."
+        if [ -f "app/src/main/java/com/vps/manager/MainActivity.java" ]; then
+          echo "✅ MainActivity.java exists"
+        else
+          echo "❌ MainActivity.java NOT FOUND!"
+        fi
+        
+        echo ""
+        echo "5️⃣ Checking mipmap folders..."
+        ls -la app/src/main/res/ | grep mipmap || echo "❌ No mipmap folders found!"
+        
+        echo ""
+        echo "6️⃣ Checking entire res structure..."
+        find app/src/main/res/ -type f
+
+    - name: 🧪 Test aapt2 compile
+      run: |
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0
+        
+        echo "=========================================="
+        echo "🧪 Testing aapt2 compile..."
+        echo "=========================================="
+        
+        # تست کامپایل منابع
+        mkdir -p test_resources
+        aapt2 compile --dir app/src/main/res -o test_resources/
+        if [ $? -eq 0 ]; then
+          echo "✅ aapt2 compile succeeded!"
+          echo "Files created:"
+          ls -la test_resources/
+        else
+          echo "❌ aapt2 compile FAILED!"
+          echo "Check the error above."
+        fi
