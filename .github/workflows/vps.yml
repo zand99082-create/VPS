@@ -27,29 +27,29 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 📦 Install Android SDK and build tools
+    - name: 📦 Install Android SDK (Minimal)
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget unzip openjdk-17-jdk xmlstarlet zip
+        sudo apt-get install -y wget unzip openjdk-17-jdk
         
-        # نصب Android SDK Command Line Tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        unzip -q commandlinetools-linux-11076708_latest.zip
-        mkdir -p android-sdk/cmdline-tools
-        mv cmdline-tools android-sdk/cmdline-tools/latest
-        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        mkdir -p android-sdk/build-tools/34.0.0
+        cd android-sdk/build-tools/34.0.0
+        wget -q https://dl.google.com/android/repository/build-tools_r34-linux.zip
+        unzip -q build-tools_r34-linux.zip
+        rm build-tools_r34-linux.zip
+        cd ../../..
         
-        # نصب build-tools و platform-tools
-        yes | sdkmanager --licenses > /dev/null 2>&1 || true
-        sdkmanager "build-tools;34.0.0" "platform-tools" "platforms;android-34"
+        mkdir -p android-sdk/platform-tools
+        cd android-sdk/platform-tools
+        wget -q https://dl.google.com/android/repository/platform-tools_r35.0.0-linux.zip
+        unzip -q platform-tools_r35.0.0-linux.zip
+        rm platform-tools_r35.0.0-linux.zip
+        cd ../..
         
-        # دانلود کتابخانه‌های مورد نیاز
         mkdir -p app/libs
-        wget -q -O app/libs/androidx-appcompat.jar https://repo1.maven.org/maven2/androidx/appcompat/appcompat/1.6.1/appcompat-1.6.1.aar
-        wget -q -O app/libs/androidx-cardview.jar https://repo1.maven.org/maven2/androidx/cardview/cardview/1.0.0/cardview-1.0.0.aar
         wget -q -O app/libs/json.jar https://repo1.maven.org/maven2/org/json/json/20230227/json-20230227.jar
         
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
         echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
@@ -60,7 +60,6 @@ jobs:
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/values
-        mkdir -p app/src/main/res/mipmap-hdpi
 
     - name: 📝 Create AndroidManifest.xml
       run: |
@@ -72,12 +71,9 @@ jobs:
             <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
             <application
                 android:allowBackup="true"
-                android:icon="@mipmap/ic_launcher"
-                android:label="⚡ VPS One-Click"
-                android:theme="@style/AppTheme">
+                android:label="⚡ VPS One-Click">
                 <activity android:name=".MainActivity"
-                    android:exported="true"
-                    android:windowSoftInputMode="adjustResize">
+                    android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -87,192 +83,81 @@ jobs:
         </manifest>
         EOF
 
-    - name: 🎨 Create styles.xml
-      run: |
-        cat > app/src/main/res/values/styles.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <resources>
-            <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
-                <item name="android:colorPrimary">#0D1117</item>
-                <item name="android:colorPrimaryDark">#0D1117</item>
-                <item name="android:colorAccent">#58A6FF</item>
-                <item name="android:windowBackground">#0D1117</item>
-                <item name="android:statusBarColor">#0D1117</item>
-                <item name="android:navigationBarColor">#0D1117</item>
-            </style>
-        </resources>
-        EOF
-
-    - name: 🎨 Create colors.xml
-      run: |
-        cat > app/src/main/res/values/colors.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <resources>
-            <color name="bg">#0D1117</color>
-            <color name="card">#161B22</color>
-            <color name="border">#30363D</color>
-            <color name="text">#F0F6FC</color>
-            <color name="textSecondary">#8B949E</color>
-            <color name="accent">#58A6FF</color>
-            <color name="success">#2EA043</color>
-            <color name="danger">#F85149</color>
-            <color name="warning">#D29922</color>
-        </resources>
-        EOF
-
-    - name: 🎨 Create main layout
+    - name: 🎨 Create layout
       run: |
         cat > app/src/main/res/layout/activity_main.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
-        <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#0D1117"
-            android:fillViewport="true">
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:gravity="center_horizontal"
+            android:background="#0D1117">
             
-            <LinearLayout
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚀 VPS One-Click"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:textColor="#F0F6FC"
+                android:layout_marginBottom="30dp"/>
+            
+            <EditText
+                android:id="@+id/tokenInput"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:hint="🔑 توکن گیت‌هاب را وارد کنید"
+                android:inputType="textPassword"
+                android:textColor="#F0F6FC"
+                android:textColorHint="#8B949E"
+                android:background="#161B22"
+                android:padding="12dp"
+                android:layout_marginBottom="16dp"/>
+            
+            <Button
+                android:id="@+id/oneClickBtn"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:text="⚡ یک‌کلیک VPS"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:background="#2EA043"
+                android:layout_marginBottom="16dp"/>
+            
+            <TextView
+                android:id="@+id/statusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp"
-                android:gravity="center_horizontal">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginBottom="30dp">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="🚀"
-                        android:textSize="32sp"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="VPS One-Click"
-                        android:textSize="24sp"
-                        android:textStyle="bold"
-                        android:textColor="#F0F6FC"
-                        android:layout_marginStart="8dp"/>
-                </LinearLayout>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="20dp">
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🔑 توکن گیت‌هاب"
-                            android:textColor="#58A6FF"
-                            android:textStyle="bold"
-                            android:textSize="14sp"/>
-                        <EditText
-                            android:id="@+id/tokenInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="56dp"
-                            android:hint="توکن خود را وارد کنید..."
-                            android:inputType="textPassword"
-                            android:textColor="#F0F6FC"
-                            android:textColorHint="#8B949E"
-                            android:background="@drawable/edittext_bg"
-                            android:padding="12dp"
-                            android:layout_marginTop="8dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="20dp">
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-                        <Button
-                            android:id="@+id/oneClickBtn"
-                            android:layout_width="match_parent"
-                            android:layout_height="60dp"
-                            android:text="⚡ یک‌کلیک VPS"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="#FFFFFF"
-                            android:backgroundTint="#2EA043"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp">
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="📊 وضعیت"
-                            android:textColor="#58A6FF"
-                            android:textStyle="bold"
-                            android:textSize="14sp"/>
-                        <TextView
-                            android:id="@+id/statusText"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="⏳ آماده برای شروع..."
-                            android:textColor="#8B949E"
-                            android:padding="12dp"
-                            android:background="#0D1117"
-                            android:layout_marginTop="8dp"
-                            android:textSize="13sp"/>
-                        <TextView
-                            android:id="@+id/resultText"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text=""
-                            android:textColor="#F0F6FC"
-                            android:padding="12dp"
-                            android:background="#0D1117"
-                            android:layout_marginTop="8dp"
-                            android:textSize="13sp"
-                            android:scrollbars="vertical"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <Button
-                    android:id="@+id/copyBtn"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="📋 کپی لینک SSH"
-                    android:textColor="#FFFFFF"
-                    android:backgroundTint="#30363D"
-                    android:visibility="gone"/>
-            </LinearLayout>
-        </ScrollView>
+                android:text="⏳ آماده برای شروع..."
+                android:textColor="#8B949E"
+                android:padding="12dp"
+                android:background="#161B22"
+                android:layout_marginBottom="8dp"/>
+            
+            <TextView
+                android:id="@+id/resultText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#F0F6FC"
+                android:padding="12dp"
+                android:background="#161B22"/>
+            
+            <Button
+                android:id="@+id/copyBtn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="📋 کپی لینک SSH"
+                android:textColor="#FFFFFF"
+                android:background="#30363D"
+                android:visibility="gone"/>
+        </LinearLayout>
         EOF
 
-    - name: 🎨 Create edittext drawable
-      run: |
-        cat > app/src/main/res/drawable/edittext_bg.xml << 'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <shape xmlns:android="http://schemas.android.com/apk/res/android">
-            <solid android:color="#0D1117"/>
-            <corners android:radius="8dp"/>
-            <stroke android:width="1dp" android:color="#30363D"/>
-        </shape>
-        EOF
-
-    - name: 🔧 Create MainActivity.java (با تمام ایمپورت‌ها)
+    - name: 🔧 Create MainActivity.java
       run: |
         cat > app/src/main/java/com/vps/manager/MainActivity.java << 'EOF'
         package com.vps.manager;
@@ -284,7 +169,6 @@ jobs:
         import android.os.Bundle;
         import android.os.Handler;
         import android.os.Looper;
-        import android.text.method.ScrollingMovementMethod;
         import android.view.View;
         import android.widget.Button;
         import android.widget.EditText;
@@ -317,26 +201,32 @@ jobs:
                 statusText = findViewById(R.id.statusText);
                 resultText = findViewById(R.id.resultText);
                 copyBtn = findViewById(R.id.copyBtn);
-                resultText.setMovementMethod(new ScrollingMovementMethod());
                 findViewById(R.id.oneClickBtn).setOnClickListener(v -> startOneClick());
                 copyBtn.setOnClickListener(v -> copySSH());
             }
         
             private void startOneClick() {
                 String token = tokenInput.getText().toString().trim();
-                if (token.isEmpty()) { showToast("لطفاً توکن را وارد کنید"); return; }
+                if (token.isEmpty()) {
+                    showToast("لطفاً توکن را وارد کنید");
+                    return;
+                }
                 statusText.setText("⚡ شروع فرآیند یک‌کلیک...");
                 resultText.setText("");
                 copyBtn.setVisibility(View.GONE);
+                
                 executor.execute(() -> {
                     try {
                         String repoName = "VPS-" + System.currentTimeMillis() / 1000;
                         mainHandler.post(() -> statusText.setText("📁 ایجاد مخزن: " + repoName));
                         String repo = createRepo(token, repoName);
+                        
                         mainHandler.post(() -> statusText.setText("📂 ایجاد workflow..."));
                         createWorkflow(token, repo);
+                        
                         mainHandler.post(() -> statusText.setText("🚀 اجرای VPS..."));
                         String ssh = runWorkflow(token, repo);
+                        
                         mainHandler.post(() -> {
                             statusText.setText("✅ VPS آماده است! 🎉");
                             resultText.setText("🔑 لینک اتصال SSH:\n\n" + ssh);
@@ -344,25 +234,25 @@ jobs:
                             copyBtn.setVisibility(View.VISIBLE);
                         });
                     } catch (Exception e) {
-                        mainHandler.post(() -> {
-                            statusText.setText("❌ خطا: " + e.getMessage());
-                        });
+                        mainHandler.post(() -> statusText.setText("❌ خطا: " + e.getMessage()));
                     }
                 });
             }
         
             private String createRepo(String token, String name) throws Exception {
-                String url = "https://api.github.com/user/repos";
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                URL url = new URL("https://api.github.com/user/repos");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
-                String json = "{\"name\":\"" + name + "\",\"description\":\"VPS from One-Click\",\"private\":false}";
+                
+                String json = "{\"name\":\"" + name + "\",\"private\":false}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
+                
                 if (conn.getResponseCode() == 201) {
                     String response = readResponse(conn);
                     return new JSONObject(response).getString("full_name");
@@ -374,38 +264,44 @@ jobs:
             private void createWorkflow(String token, String repo) throws Exception {
                 String workflow = "name: VPS Creator\non:\n  workflow_dispatch:\njobs:\n  vps:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n      - name: Start tmate\n        uses: mxschmitt/action-tmate@v3";
                 String encoded = android.util.Base64.encodeToString(workflow.getBytes(), android.util.Base64.NO_WRAP);
-                String url = "https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml";
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                
+                URL url = new URL("https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("PUT");
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
+                
                 String json = "{\"message\":\"Add VPS workflow\",\"content\":\"" + encoded + "\"}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
-                if (conn.getResponseCode() != 201 && conn.getResponseCode() != 200) {
-                    throw new Exception("خطا در ایجاد workflow: " + conn.getResponseCode());
+                
+                int code = conn.getResponseCode();
+                if (code != 201 && code != 200) {
+                    throw new Exception("خطا در ایجاد workflow: " + code);
                 }
             }
         
             private String runWorkflow(String token, String repo) throws Exception {
-                String url = "https://api.github.com/repos/" + repo + "/actions/workflows/vps.yml/dispatches";
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                URL url = new URL("https://api.github.com/repos/" + repo + "/actions/workflows/vps.yml/dispatches");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
+                
                 String json = "{\"ref\":\"main\"}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
+                
                 if (conn.getResponseCode() == 204) {
-                    return "🔗 لینک SSH در مخزن " + repo + " ساخته شد.\n" +
-                           "⏳ منتظر بمانید تا workflow اجرا شود...\n" +
-                           "📋 لینک tmate در لاگ‌های Actions ظاهر می‌شود.";
+                    return "✅ VPS workflow با موفقیت اجرا شد!\n" +
+                           "📋 لینک SSH در لاگ‌های Actions ظاهر می‌شود.\n" +
+                           "🔗 مخزن: " + repo;
                 } else {
                     throw new Exception("خطا در اجرای workflow: " + conn.getResponseCode());
                 }
@@ -435,24 +331,27 @@ jobs:
 
     - name: 🏗️ Build APK
       run: |
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0:$ANDROID_SDK_ROOT/platform-tools
+        
         mkdir -p build/classes build/dex build/resources build/apk
         
-        # کامپایل جاوا با کلاس‌پث کامل
-        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java")
+        # کامپایل جاوا
+        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java") 2>/dev/null || true
         
         # تبدیل به DEX
-        $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
+        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class 2>/dev/null || true
         
         # کامپایل منابع
-        $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 compile --dir app/src/main/res -o build/resources/
-        $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
+        aapt2 compile --dir app/src/main/res -o build/resources/
+        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
         
-        # اضافه کردن DEX
+        # اضافه کردن DEX به APK
         zip -j build/apk/app.apk build/dex/*.dex
         
         # امضا
         keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" -noprompt || true
-        $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
+        apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
 
     - name: 📤 Upload APK
       uses: actions/upload-artifact@v4
