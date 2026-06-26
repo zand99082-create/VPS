@@ -1,90 +1,438 @@
+name: Build Ultimate VPS Manager APK
+
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours
   workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'کد نسخه'
+        required: false
+        default: '1'
+      version_name:
+        description: 'نام نسخه'
+        required: false
+        default: '1.0.0'
 
 jobs:
-  vps-session:
+  build_ultimate_apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # Just under 6 hours
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
 
-      - name: Set hostname to itz_ytansh
-        run: sudo hostnamectl set-hostname itz_ytansh
+    - name: 🛠️ Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: Download VPS backup (if any)
-        uses: actions/download-artifact@v4
-        with:
-          name: vps-backup
-          path: ./backup
-        continue-on-error: true
+    - name: 📦 Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          wget unzip \
+          openjdk-17-jdk \
+          aapt2 d8 apksigner \
+          xmlstarlet zip
 
-      - name: Install prerequisites
-        run: |
-          sudo apt update
-          sudo apt install -y tmate curl unzip sudo net-tools neofetch
+    - name: 🏗️ Create project structure
+      run: |
+        mkdir -p app/src/main/java/com/vps/manager
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/mipmap-hdpi
 
-      - name: Install Tailscale official script
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
+    - name: 📝 Create AndroidManifest.xml
+      run: |
+        cat > app/src/main/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            package="com.vps.manager">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <application
+                android:allowBackup="true"
+                android:icon="@mipmap/ic_launcher"
+                android:label="⚡ VPS One-Click"
+                android:theme="@style/AppTheme">
+                <activity android:name=".MainActivity"
+                    android:exported="true"
+                    android:windowSoftInputMode="adjustResize">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
 
-      - name: Restore backup files
-        run: |
-          if [ -f ./backup/backup.zip ]; then
-            unzip -o ./backup/backup.zip -d /
-          else
-            echo "No backup found, starting fresh"
-          fi
+    - name: 🎨 Create styles.xml
+      run: |
+        cat > app/src/main/res/values/styles.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+                <item name="colorPrimary">#0D1117</item>
+                <item name="colorPrimaryDark">#0D1117</item>
+                <item name="colorAccent">#58A6FF</item>
+                <item name="android:windowBackground">#0D1117</item>
+                <item name="android:statusBarColor">#0D1117</item>
+                <item name="android:navigationBarColor">#0D1117</item>
+            </style>
+        </resources>
+        EOF
 
-      - name: Restore Tailscale state
-        run: |
-          if [ -f /opt/vps-backup/data/tailscaled.state ]; then
-            sudo mkdir -p /var/lib/tailscale
-            sudo cp /opt/vps-backup/data/tailscaled.state /var/lib/tailscale/tailscaled.state
-            sudo chmod 600 /var/lib/tailscale/tailscaled.state
-          fi
+    - name: 🎨 Create colors.xml
+      run: |
+        cat > app/src/main/res/values/colors.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <color name="bg">#0D1117</color>
+            <color name="card">#161B22</color>
+            <color name="border">#30363D</color>
+            <color name="text">#F0F6FC</color>
+            <color name="textSecondary">#8B949E</color>
+            <color name="accent">#58A6FF</color>
+            <color name="success">#2EA043</color>
+            <color name="danger">#F85149</color>
+            <color name="warning">#D29922</color>
+        </resources>
+        EOF
 
-      - name: Start Tailscale
-        run: |
-          sudo tailscaled &
-          sleep 8
-          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo "Tailscale already up"
+    - name: 🎨 Create main layout
+      run: |
+        cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#0D1117"
+            android:fillViewport="true">
+            
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:gravity="center_horizontal">
 
-      - name: Create user itz_ytansh with sudo
-        run: |
-          if ! id -u itz_ytansh >/dev/null 2>&1; then
-            sudo useradd -m -s /bin/bash itz_ytansh
-            echo "itz_ytansh:itz_ytansh" | sudo chpasswd
-            sudo usermod -aG sudo itz_ytansh
-            echo "itz_ytansh ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/itz_ytansh
-          fi
+                <!-- هدر -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginBottom="30dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🚀"
+                        android:textSize="32sp"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="VPS One-Click"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:textColor="#F0F6FC"
+                        android:layout_marginStart="8dp"/>
+                </LinearLayout>
 
-      - name: Start tmate session for SSH access
-        uses: mxschmitt/action-tmate@v3
+                <!-- کارت توکن -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="12dp"
+                    app:cardBackgroundColor="#161B22"
+                    app:cardElevation="4dp"
+                    android:layout_marginBottom="20dp">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔑 توکن گیت‌هاب"
+                            android:textColor="#58A6FF"
+                            android:textStyle="bold"
+                            android:textSize="14sp"/>
+                        <EditText
+                            android:id="@+id/tokenInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="56dp"
+                            android:hint="توکن خود را وارد کنید..."
+                            android:inputType="textPassword"
+                            android:textColor="#F0F6FC"
+                            android:textColorHint="#8B949E"
+                            android:background="@drawable/edittext_bg"
+                            android:padding="12dp"
+                            android:layout_marginTop="8dp"/>
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
 
-      - name: Show Tailscale IP and tmate info
-        run: |
-          echo "🔗 Tailscale IP:"
-          tailscale ip -4 || echo "Tailscale IP not found"
-          echo ""
-          echo "🔑 tmate SSH session:"
-          cat $HOME/.tmate.sock/ssh
+                <!-- دکمه اصلی -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="12dp"
+                    app:cardBackgroundColor="#161B22"
+                    android:layout_marginBottom="20dp">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+                        <Button
+                            android:id="@+id/oneClickBtn"
+                            android:layout_width="match_parent"
+                            android:layout_height="60dp"
+                            android:text="⚡ یک‌کلیک VPS"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#2EA043"
+                            android:elevation="8dp"
+                            android:stateListAnimator="@null"/>
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
 
-      - name: Sleep to keep VPS alive
-        run: sleep 21600  # 6 hours
+                <!-- کارت اطلاعات -->
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="12dp"
+                    app:cardBackgroundColor="#161B22"
+                    android:layout_marginBottom="16dp">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📊 وضعیت"
+                            android:textColor="#58A6FF"
+                            android:textStyle="bold"
+                            android:textSize="14sp"/>
+                        <TextView
+                            android:id="@+id/statusText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="⏳ آماده برای شروع..."
+                            android:textColor="#8B949E"
+                            android:padding="12dp"
+                            android:background="#0D1117"
+                            android:layout_marginTop="8dp"
+                            android:textSize="13sp"/>
+                        <TextView
+                            android:id="@+id/resultText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textColor="#F0F6FC"
+                            android:padding="12dp"
+                            android:background="#0D1117"
+                            android:layout_marginTop="8dp"
+                            android:textSize="13sp"
+                            android:scrollbars="vertical"/>
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
 
-      - name: Backup VPS data and tailscale state
-        run: |
-          sudo mkdir -p /opt/vps-backup/data
-          sudo cp /var/lib/tailscale/tailscaled.state /opt/vps-backup/data/
-          sudo chown -R $USER:$USER /opt/vps-backup
-          zip -r backup.zip /opt/vps-backup
+                <!-- دکمه کپی -->
+                <Button
+                    android:id="@+id/copyBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="📋 کپی لینک SSH"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#30363D"
+                    android:visibility="gone"/>
+            </LinearLayout>
+        </ScrollView>
+        EOF
 
-      - name: Upload VPS backup artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vps-backup
-          path: backup.zip
+    - name: 🎨 Create edittext drawable
+      run: |
+        cat > app/src/main/res/drawable/edittext_bg.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android">
+            <solid android:color="#0D1117"/>
+            <corners android:radius="8dp"/>
+            <stroke android:width="1dp" android:color="#30363D"/>
+        </shape>
+        EOF
+
+    - name: 🔧 Create MainActivity.java
+      run: |
+        cat > app/src/main/java/com/vps/manager/MainActivity.java << 'EOF'
+        package com.vps.manager;
+        import android.os.Bundle;
+        import android.text.method.ScrollingMovementMethod;
+        import android.view.View;
+        import android.widget.Button;
+        import android.widget.EditText;
+        import android.widget.TextView;
+        import android.widget.Toast;
+        import androidx.appcompat.app.AppCompatActivity;
+        import androidx.cardview.widget.CardView;
+        import java.io.BufferedReader;
+        import java.io.DataOutputStream;
+        import java.io.InputStreamReader;
+        import java.net.HttpURLConnection;
+        import java.net.URL;
+        import java.util.concurrent.ExecutorService;
+        import java.util.concurrent.Executors;
+        import android.content.ClipboardManager;
+        import android.content.Context;
+        import org.json.JSONObject;
+
+        public class MainActivity extends AppCompatActivity {
+            private EditText tokenInput;
+            private TextView statusText, resultText;
+            private Button copyBtn;
+            private ExecutorService executor = Executors.newSingleThreadExecutor();
+            private android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+            private String currentSSH = "";
+
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                setContentView(R.layout.activity_main);
+                tokenInput = findViewById(R.id.tokenInput);
+                statusText = findViewById(R.id.statusText);
+                resultText = findViewById(R.id.resultText);
+                copyBtn = findViewById(R.id.copyBtn);
+                resultText.setMovementMethod(new ScrollingMovementMethod());
+                findViewById(R.id.oneClickBtn).setOnClickListener(v -> startOneClick());
+                copyBtn.setOnClickListener(v -> copySSH());
+            }
+
+            private void startOneClick() {
+                String token = tokenInput.getText().toString().trim();
+                if (token.isEmpty()) { showToast("لطفاً توکن را وارد کنید"); return; }
+                statusText.setText("⚡ شروع فرآیند یک‌کلیک...");
+                resultText.setText("");
+                copyBtn.setVisibility(View.GONE);
+                executor.execute(() -> {
+                    try {
+                        String repoName = "VPS-" + System.currentTimeMillis() / 1000;
+                        mainHandler.post(() -> statusText.setText("📁 ایجاد مخزن: " + repoName));
+                        String repo = createRepo(token, repoName);
+                        mainHandler.post(() -> statusText.setText("📂 ایجاد workflow..."));
+                        createWorkflow(token, repo);
+                        mainHandler.post(() -> statusText.setText("🚀 اجرای VPS..."));
+                        String ssh = runWorkflow(token, repo);
+                        mainHandler.post(() -> {
+                            statusText.setText("✅ VPS آماده است! 🎉");
+                            resultText.setText("🔑 لینک اتصال SSH:\n\n" + ssh);
+                            currentSSH = ssh;
+                            copyBtn.setVisibility(View.VISIBLE);
+                        });
+                    } catch (Exception e) {
+                        mainHandler.post(() -> {
+                            statusText.setText("❌ خطا: " + e.getMessage());
+                        });
+                    }
+                });
+            }
+
+            private String createRepo(String token, String name) throws Exception {
+                String url = "https://api.github.com/user/repos";
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Authorization", "token " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                String json = "{\"name\":\"" + name + "\",\"description\":\"VPS from One-Click\",\"private\":false}";
+                DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
+                wr.writeBytes(json);
+                wr.flush();
+                wr.close();
+                if (conn.getResponseCode() == 201) {
+                    String response = readResponse(conn);
+                    return new JSONObject(response).getString("full_name");
+                } else {
+                    throw new Exception("خطا در ایجاد مخزن: " + conn.getResponseCode());
+                }
+            }
+
+            private void createWorkflow(String token, String repo) throws Exception {
+                String workflow = "name: VPS Creator\non:\n  workflow_dispatch:\njobs:\n  vps:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n      - name: Start tmate\n        uses: mxschmitt/action-tmate@v3";
+                String encoded = android.util.Base64.encodeToString(workflow.getBytes(), android.util.Base64.NO_WRAP);
+                String url = "https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml";
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod("PUT");
+                conn.setRequestProperty("Authorization", "token " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                String json = "{\"message\":\"Add VPS workflow\",\"content\":\"" + encoded + "\"}";
+                DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
+                wr.writeBytes(json);
+                wr.flush();
+                wr.close();
+                if (conn.getResponseCode() != 201) throw new Exception("خطا در ایجاد workflow");
+            }
+
+            private String runWorkflow(String token, String repo) throws Exception {
+                String url = "https://api.github.com/repos/" + repo + "/actions/workflows/vps.yml/dispatches";
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Authorization", "token " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                String json = "{\"ref\":\"main\"}";
+                DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
+                wr.writeBytes(json);
+                wr.flush();
+                wr.close();
+                if (conn.getResponseCode() == 204) {
+                    return "🔗 لینک SSH در مخزن " + repo + " ساخته شد.\n" +
+                           "⏳ منتظر بمانید تا workflow اجرا شود...\n" +
+                           "📋 لینک tmate در لاگ‌های Actions ظاهر می‌شود.";
+                } else {
+                    throw new Exception("خطا در اجرای workflow");
+                }
+            }
+
+            private String readResponse(HttpURLConnection conn) throws Exception {
+                BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder(); String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                br.close();
+                return sb.toString();
+            }
+
+            private void copySSH() {
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                android.content.ClipData clip = android.content.ClipData.newPlainText("SSH", currentSSH);
+                clipboard.setPrimaryClip(clip);
+                showToast("📋 لینک SSH کپی شد!");
+            }
+
+            private void showToast(String msg) { mainHandler.post(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show()); }
+        }
+        EOF
+
+    - name: 🏗️ Build APK
+      run: |
+        mkdir -p build/classes build/dex build/resources build/apk
+        javac -d build/classes -cp "app/libs/*" $(find app/src/main/java -name "*.java")
+        d8 --lib /usr/lib/android-sdk/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
+        aapt2 compile --dir app/src/main/res -o build/resources/
+        aapt2 link -I /usr/lib/android-sdk/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
+        zip -j build/apk/app.apk build/dex/*.dex
+        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug"
+        apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
+
+    - name: 📤 Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: VPS-OneClick
+        path: VPS-OneClick.apk
+        retention-days: 30
