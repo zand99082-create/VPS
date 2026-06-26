@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APKS
 
 on:
   workflow_dispatch:
@@ -42,33 +42,39 @@ jobs:
         echo "📦 Compiling resources..."
         aapt2 compile --dir app/src/main/res -o build/resources/
         
-        # 3. لینک کردن منابع و تولید R.java
+        # 3. لینک کردن منابع و ساخت APK
         echo "🔗 Linking resources..."
         aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
           --manifest app/src/main/AndroidManifest.xml \
           -o build/apk/app.apk \
+          build/resources/*.flat
+        
+        # 4. تولید R.java با استفاده از aapt2 (به روش جداگانه)
+        echo "📝 Generating R.java..."
+        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
+          --manifest app/src/main/AndroidManifest.xml \
           --java build/classes \
           build/resources/*.flat
         
-        # 4. کامپایل جاوا با کلاس‌پث کامل
+        # 5. کامپایل جاوا با کلاس‌پث کامل و R.java
         echo "☕ Compiling Java files..."
         javac -d build/classes \
-          -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" \
+          -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar:build/classes" \
           -sourcepath app/src/main/java \
           app/src/main/java/com/vps/manager/MainActivity.java
         
-        # 5. تبدیل به DEX
+        # 6. تبدیل به DEX
         echo "📱 Converting to DEX..."
         d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
           --output build/dex \
           --min-api 21 \
           build/classes/**/*.class
         
-        # 6. اضافه کردن DEX به APK
+        # 7. اضافه کردن DEX به APK
         echo "📦 Adding DEX to APK..."
         zip -j build/apk/app.apk build/dex/*.dex
         
-        # 7. امضا
+        # 8. امضا
         echo "🔑 Signing APK..."
         keytool -genkey -v -keystore debug.keystore \
           -alias debug -keyalg RSA -keysize 2048 \
