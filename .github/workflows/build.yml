@@ -1,0 +1,62 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Install Android SDK
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
+        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip commandlinetools-linux-11076708_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        yes | sdkmanager --licenses
+        sdkmanager "build-tools;34.0.0" "platforms;android-34"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
+    
+    - name: Build APK
+      run: |
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0
+        
+        # کامپایل منابع
+        aapt2 compile --dir app/src/main/res -o build/resources/
+        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
+          --manifest app/src/main/AndroidManifest.xml \
+          -o build/apk/app.apk \
+          build/resources/*.flat
+        
+        # کامپایل جاوا
+        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java")
+        
+        # تبدیل به DEX
+        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
+        
+        # اضافه کردن DEX به APK
+        zip -j build/apk/app.apk build/dex/*.dex
+        
+        # امضا
+        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" -noprompt
+        apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: VPS-OneClick
+        path: VPS-OneClick.apk
