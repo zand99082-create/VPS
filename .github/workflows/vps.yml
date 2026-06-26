@@ -27,53 +27,51 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 📦 Install Android SDK (Minimal)
+    - name: 📦 Install Android SDK
       run: |
         sudo apt-get update
         sudo apt-get install -y wget unzip openjdk-17-jdk
         
-        mkdir -p android-sdk/build-tools/34.0.0
-        cd android-sdk/build-tools/34.0.0
-        wget -q https://dl.google.com/android/repository/build-tools_r34-linux.zip
-        unzip -q build-tools_r34-linux.zip
-        rm build-tools_r34-linux.zip
-        cd ../../..
-        
-        mkdir -p android-sdk/platform-tools
-        cd android-sdk/platform-tools
-        wget -q https://dl.google.com/android/repository/platform-tools_r35.0.0-linux.zip
-        unzip -q platform-tools_r35.0.0-linux.zip
-        rm platform-tools_r35.0.0-linux.zip
-        cd ../..
-        
-        mkdir -p app/libs
-        wget -q -O app/libs/json.jar https://repo1.maven.org/maven2/org/json/json/20230227/json-20230227.jar
+        # دانلود Android SDK Command Line Tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip -q commandlinetools-linux-11076708_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
         
         export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        
+        # نصب build-tools
+        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+        sdkmanager "build-tools;34.0.0" "platforms;android-34"
+        
+        # ایجاد symlink برای دسترسی آسان
+        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 /usr/bin/aapt2
+        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 /usr/bin/d8
+        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner /usr/bin/apksigner
+        
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
-        echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
-    - name: 🏗️ Create project structure
+    - name: 📥 Download JSON library
+      run: |
+        mkdir -p app/libs
+        wget -q -O app/libs/json.jar https://repo1.maven.org/maven2/org/json/json/20230227/json-20230227.jar
+
+    - name: 🏗️ Create project files
       run: |
         mkdir -p app/src/main/java/com/vps/manager
         mkdir -p app/src/main/res/layout
-        mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/values
-
-    - name: 📝 Create AndroidManifest.xml
-      run: |
+        
+        # AndroidManifest.xml
         cat > app/src/main/AndroidManifest.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android"
             package="com.vps.manager">
             <uses-permission android:name="android.permission.INTERNET" />
-            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-            <application
-                android:allowBackup="true"
-                android:label="⚡ VPS One-Click">
-                <activity android:name=".MainActivity"
-                    android:exported="true">
+            <application android:label="⚡ VPS One-Click">
+                <activity android:name=".MainActivity" android:exported="true">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -82,9 +80,8 @@ jobs:
             </application>
         </manifest>
         EOF
-
-    - name: 🎨 Create layout
-      run: |
+        
+        # activity_main.xml
         cat > app/src/main/res/layout/activity_main.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -156,9 +153,8 @@ jobs:
                 android:visibility="gone"/>
         </LinearLayout>
         EOF
-
-    - name: 🔧 Create MainActivity.java
-      run: |
+        
+        # MainActivity.java
         cat > app/src/main/java/com/vps/manager/MainActivity.java << 'EOF'
         package com.vps.manager;
         
@@ -174,9 +170,7 @@ jobs:
         import android.widget.EditText;
         import android.widget.TextView;
         import android.widget.Toast;
-        
         import org.json.JSONObject;
-        
         import java.io.BufferedReader;
         import java.io.DataOutputStream;
         import java.io.InputStreamReader;
@@ -246,13 +240,11 @@ jobs:
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
-                
                 String json = "{\"name\":\"" + name + "\",\"private\":false}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
-                
                 if (conn.getResponseCode() == 201) {
                     String response = readResponse(conn);
                     return new JSONObject(response).getString("full_name");
@@ -264,20 +256,17 @@ jobs:
             private void createWorkflow(String token, String repo) throws Exception {
                 String workflow = "name: VPS Creator\non:\n  workflow_dispatch:\njobs:\n  vps:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n      - name: Start tmate\n        uses: mxschmitt/action-tmate@v3";
                 String encoded = android.util.Base64.encodeToString(workflow.getBytes(), android.util.Base64.NO_WRAP);
-                
                 URL url = new URL("https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("PUT");
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
-                
                 String json = "{\"message\":\"Add VPS workflow\",\"content\":\"" + encoded + "\"}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
-                
                 int code = conn.getResponseCode();
                 if (code != 201 && code != 200) {
                     throw new Exception("خطا در ایجاد workflow: " + code);
@@ -291,17 +280,13 @@ jobs:
                 conn.setRequestProperty("Authorization", "token " + token);
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
-                
                 String json = "{\"ref\":\"main\"}";
                 DataOutputStream wr = new DataOutputStream(conn.getOutputStream());
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
-                
                 if (conn.getResponseCode() == 204) {
-                    return "✅ VPS workflow با موفقیت اجرا شد!\n" +
-                           "📋 لینک SSH در لاگ‌های Actions ظاهر می‌شود.\n" +
-                           "🔗 مخزن: " + repo;
+                    return "✅ VPS workflow با موفقیت اجرا شد!\n📋 لینک SSH در لاگ‌های Actions ظاهر می‌شود.\n🔗 مخزن: " + repo;
                 } else {
                     throw new Exception("خطا در اجرای workflow: " + conn.getResponseCode());
                 }
@@ -337,20 +322,20 @@ jobs:
         mkdir -p build/classes build/dex build/resources build/apk
         
         # کامپایل جاوا
-        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java") 2>/dev/null || true
+        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java")
         
         # تبدیل به DEX
-        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class 2>/dev/null || true
+        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
         
         # کامپایل منابع
         aapt2 compile --dir app/src/main/res -o build/resources/
         aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
         
-        # اضافه کردن DEX به APK
+        # اضافه کردن DEX
         zip -j build/apk/app.apk build/dex/*.dex
         
         # امضا
-        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" -noprompt || true
+        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" -noprompt
         apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
 
     - name: 📤 Upload APK
