@@ -35,6 +35,9 @@ jobs:
         export ANDROID_SDK_ROOT=$(pwd)/android-sdk
         export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0
         
+        # ساخت پوشه‌های مورد نیاز
+        mkdir -p build/resources build/apk build/classes build/dex
+        
         # کامپایل منابع
         aapt2 compile --dir app/src/main/res -o build/resources/
         aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
