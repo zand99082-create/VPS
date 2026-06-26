@@ -21,20 +21,36 @@ jobs:
     - name: 📥 Checkout
       uses: actions/checkout@v4
 
-    - name: 🛠️ Setup Java
+    - name: 🛠️ Setup Java 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: 📦 Install build tools
+    - name: 📦 Install Android SDK and build tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          wget unzip \
-          openjdk-17-jdk \
-          aapt2 d8 apksigner \
-          xmlstarlet zip
+        sudo apt-get install -y wget unzip openjdk-17-jdk xmlstarlet zip
+        
+        # نصب Android SDK Command Line Tools
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip -q commandlinetools-linux-11076708_latest.zip
+        mkdir -p android-sdk/cmdline-tools
+        mv cmdline-tools android-sdk/cmdline-tools/latest
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        
+        # نصب build-tools و platform-tools
+        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+        sdkmanager "build-tools;34.0.0" "platform-tools" "platforms;android-34"
+        
+        # ایجاد symlink برای aapt2 و d8
+        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 /usr/local/bin/aapt2
+        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 /usr/local/bin/d8
+        
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
+        echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
     - name: 🏗️ Create project structure
       run: |
@@ -119,7 +135,6 @@ jobs:
                 android:padding="20dp"
                 android:gravity="center_horizontal">
 
-                <!-- هدر -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -141,7 +156,6 @@ jobs:
                         android:layout_marginStart="8dp"/>
                 </LinearLayout>
 
-                <!-- کارت توکن -->
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -175,7 +189,6 @@ jobs:
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
-                <!-- دکمه اصلی -->
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -201,7 +214,6 @@ jobs:
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
-                <!-- کارت اطلاعات -->
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -244,7 +256,6 @@ jobs:
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
-                <!-- دکمه کپی -->
                 <Button
                     android:id="@+id/copyBtn"
                     android:layout_width="match_parent"
@@ -422,13 +433,23 @@ jobs:
     - name: 🏗️ Build APK
       run: |
         mkdir -p build/classes build/dex build/resources build/apk
+        
+        # کامپایل جاوا
         javac -d build/classes -cp "app/libs/*" $(find app/src/main/java -name "*.java")
-        d8 --lib /usr/lib/android-sdk/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
-        aapt2 compile --dir app/src/main/res -o build/resources/
-        aapt2 link -I /usr/lib/android-sdk/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
+        
+        # تبدیل به DEX
+        $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
+        
+        # کامپایل منابع
+        $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 compile --dir app/src/main/res -o build/resources/
+        $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar --manifest app/src/main/AndroidManifest.xml -o build/apk/app.apk build/resources/*.flat
+        
+        # اضافه کردن DEX
         zip -j build/apk/app.apk build/dex/*.dex
-        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug"
-        apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
+        
+        # امضا
+        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" || true
+        $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
 
     - name: 📤 Upload APK
       uses: actions/upload-artifact@v4
