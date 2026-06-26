@@ -1,4 +1,4 @@
-name: Build APKSS
+name: Build APK with Gradle
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
     
-    - name: Install Android SDK
+    - name: Setup Android SDK
       run: |
         sudo apt-get update
         sudo apt-get install -y wget unzip
@@ -30,51 +30,24 @@ jobs:
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
 
-    - name: Build APK
+    - name: Create gradle wrapper
+      run: |
+        mkdir -p gradle/wrapper
+        echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
+        echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+        echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.2-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
+        echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
+        echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
+
+    - name: Build APK with Gradle
       run: |
         export ANDROID_SDK_ROOT=$(pwd)/android-sdk
         export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0
-        
-        mkdir -p build/resources build/apk build/classes build/dex
-        
-        echo "📦 Compiling resources..."
-        aapt2 compile --dir app/src/main/res -o build/resources/
-        
-        echo "🔗 Linking resources and generating R.java..."
-        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
-          --manifest app/src/main/AndroidManifest.xml \
-          -o build/apk/app.apk \
-          --java build/classes \
-          build/resources/*.flat
-        
-        echo "☕ Compiling Java files..."
-        javac -d build/classes \
-          -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" \
-          app/src/main/java/com/vps/manager/MainActivity.java
-        
-        echo "📱 Converting to DEX..."
-        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
-          --output build/dex \
-          --min-api 21 \
-          build/classes/**/*.class
-        
-        echo "📦 Adding DEX to APK..."
-        zip -j build/apk/app.apk build/dex/*.dex
-        
-        echo "🔑 Signing APK..."
-        keytool -genkey -v -keystore debug.keystore \
-          -alias debug -keyalg RSA -keysize 2048 \
-          -validity 10000 -storepass android -keypass android \
-          -dname "CN=Debug" -noprompt
-        apksigner sign --ks debug.keystore \
-          --ks-pass pass:android \
-          --out VPS-OneClick.apk \
-          build/apk/app.apk
-        
-        echo "✅ Build completed!"
+        chmod +x gradlew 2>/dev/null || true
+        ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: VPS-OneClick
-        path: VPS-OneClick.apk
+        path: app/build/outputs/apk/debug/*.apk
