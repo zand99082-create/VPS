@@ -44,9 +44,11 @@ jobs:
         yes | sdkmanager --licenses > /dev/null 2>&1 || true
         sdkmanager "build-tools;34.0.0" "platform-tools" "platforms;android-34"
         
-        # ایجاد symlink برای aapt2 و d8
-        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/aapt2 /usr/local/bin/aapt2
-        sudo ln -sf $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 /usr/local/bin/d8
+        # دانلود کتابخانه‌های مورد نیاز
+        mkdir -p app/libs
+        wget -q -O app/libs/androidx-appcompat.jar https://repo1.maven.org/maven2/androidx/appcompat/appcompat/1.6.1/appcompat-1.6.1.aar
+        wget -q -O app/libs/androidx-cardview.jar https://repo1.maven.org/maven2/androidx/cardview/cardview/1.0.0/cardview-1.0.0.aar
+        wget -q -O app/libs/json.jar https://repo1.maven.org/maven2/org/json/json/20230227/json-20230227.jar
         
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
         echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
@@ -90,10 +92,10 @@ jobs:
         cat > app/src/main/res/values/styles.xml << 'EOF'
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
-            <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-                <item name="colorPrimary">#0D1117</item>
-                <item name="colorPrimaryDark">#0D1117</item>
-                <item name="colorAccent">#58A6FF</item>
+            <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+                <item name="android:colorPrimary">#0D1117</item>
+                <item name="android:colorPrimaryDark">#0D1117</item>
+                <item name="android:colorAccent">#58A6FF</item>
                 <item name="android:windowBackground">#0D1117</item>
                 <item name="android:statusBarColor">#0D1117</item>
                 <item name="android:navigationBarColor">#0D1117</item>
@@ -159,9 +161,6 @@ jobs:
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="12dp"
-                    app:cardBackgroundColor="#161B22"
-                    app:cardElevation="4dp"
                     android:layout_marginBottom="20dp">
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -192,8 +191,6 @@ jobs:
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="12dp"
-                    app:cardBackgroundColor="#161B22"
                     android:layout_marginBottom="20dp">
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -208,17 +205,13 @@ jobs:
                             android:textSize="18sp"
                             android:textStyle="bold"
                             android:textColor="#FFFFFF"
-                            android:backgroundTint="#2EA043"
-                            android:elevation="8dp"
-                            android:stateListAnimator="@null"/>
+                            android:backgroundTint="#2EA043"/>
                     </LinearLayout>
                 </androidx.cardview.widget.CardView>
 
                 <androidx.cardview.widget.CardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="12dp"
-                    app:cardBackgroundColor="#161B22"
                     android:layout_marginBottom="16dp">
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -279,19 +272,27 @@ jobs:
         </shape>
         EOF
 
-    - name: 🔧 Create MainActivity.java
+    - name: 🔧 Create MainActivity.java (با تمام ایمپورت‌ها)
       run: |
         cat > app/src/main/java/com/vps/manager/MainActivity.java << 'EOF'
         package com.vps.manager;
+        
+        import android.app.Activity;
+        import android.content.ClipData;
+        import android.content.ClipboardManager;
+        import android.content.Context;
         import android.os.Bundle;
+        import android.os.Handler;
+        import android.os.Looper;
         import android.text.method.ScrollingMovementMethod;
         import android.view.View;
         import android.widget.Button;
         import android.widget.EditText;
         import android.widget.TextView;
         import android.widget.Toast;
-        import androidx.appcompat.app.AppCompatActivity;
-        import androidx.cardview.widget.CardView;
+        
+        import org.json.JSONObject;
+        
         import java.io.BufferedReader;
         import java.io.DataOutputStream;
         import java.io.InputStreamReader;
@@ -299,18 +300,15 @@ jobs:
         import java.net.URL;
         import java.util.concurrent.ExecutorService;
         import java.util.concurrent.Executors;
-        import android.content.ClipboardManager;
-        import android.content.Context;
-        import org.json.JSONObject;
-
-        public class MainActivity extends AppCompatActivity {
+        
+        public class MainActivity extends Activity {
             private EditText tokenInput;
             private TextView statusText, resultText;
             private Button copyBtn;
             private ExecutorService executor = Executors.newSingleThreadExecutor();
-            private android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+            private Handler mainHandler = new Handler(Looper.getMainLooper());
             private String currentSSH = "";
-
+        
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
@@ -323,7 +321,7 @@ jobs:
                 findViewById(R.id.oneClickBtn).setOnClickListener(v -> startOneClick());
                 copyBtn.setOnClickListener(v -> copySSH());
             }
-
+        
             private void startOneClick() {
                 String token = tokenInput.getText().toString().trim();
                 if (token.isEmpty()) { showToast("لطفاً توکن را وارد کنید"); return; }
@@ -352,7 +350,7 @@ jobs:
                     }
                 });
             }
-
+        
             private String createRepo(String token, String name) throws Exception {
                 String url = "https://api.github.com/user/repos";
                 HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -372,7 +370,7 @@ jobs:
                     throw new Exception("خطا در ایجاد مخزن: " + conn.getResponseCode());
                 }
             }
-
+        
             private void createWorkflow(String token, String repo) throws Exception {
                 String workflow = "name: VPS Creator\non:\n  workflow_dispatch:\njobs:\n  vps:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n      - name: Start tmate\n        uses: mxschmitt/action-tmate@v3";
                 String encoded = android.util.Base64.encodeToString(workflow.getBytes(), android.util.Base64.NO_WRAP);
@@ -387,9 +385,11 @@ jobs:
                 wr.writeBytes(json);
                 wr.flush();
                 wr.close();
-                if (conn.getResponseCode() != 201) throw new Exception("خطا در ایجاد workflow");
+                if (conn.getResponseCode() != 201 && conn.getResponseCode() != 200) {
+                    throw new Exception("خطا در ایجاد workflow: " + conn.getResponseCode());
+                }
             }
-
+        
             private String runWorkflow(String token, String repo) throws Exception {
                 String url = "https://api.github.com/repos/" + repo + "/actions/workflows/vps.yml/dispatches";
                 HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -407,26 +407,29 @@ jobs:
                            "⏳ منتظر بمانید تا workflow اجرا شود...\n" +
                            "📋 لینک tmate در لاگ‌های Actions ظاهر می‌شود.";
                 } else {
-                    throw new Exception("خطا در اجرای workflow");
+                    throw new Exception("خطا در اجرای workflow: " + conn.getResponseCode());
                 }
             }
-
+        
             private String readResponse(HttpURLConnection conn) throws Exception {
                 BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder(); String line;
+                StringBuilder sb = new StringBuilder();
+                String line;
                 while ((line = br.readLine()) != null) sb.append(line);
                 br.close();
                 return sb.toString();
             }
-
+        
             private void copySSH() {
                 ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                android.content.ClipData clip = android.content.ClipData.newPlainText("SSH", currentSSH);
+                ClipData clip = ClipData.newPlainText("SSH", currentSSH);
                 clipboard.setPrimaryClip(clip);
                 showToast("📋 لینک SSH کپی شد!");
             }
-
-            private void showToast(String msg) { mainHandler.post(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show()); }
+        
+            private void showToast(String msg) {
+                mainHandler.post(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
+            }
         }
         EOF
 
@@ -434,8 +437,8 @@ jobs:
       run: |
         mkdir -p build/classes build/dex build/resources build/apk
         
-        # کامپایل جاوا
-        javac -d build/classes -cp "app/libs/*" $(find app/src/main/java -name "*.java")
+        # کامپایل جاوا با کلاس‌پث کامل
+        javac -d build/classes -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" $(find app/src/main/java -name "*.java")
         
         # تبدیل به DEX
         $ANDROID_SDK_ROOT/build-tools/34.0.0/d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar --output build/dex --min-api 21 build/classes/**/*.class
@@ -448,7 +451,7 @@ jobs:
         zip -j build/apk/app.apk build/dex/*.dex
         
         # امضا
-        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" || true
+        keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug" -noprompt || true
         $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android --out VPS-OneClick.apk build/apk/app.apk
 
     - name: 📤 Upload APK
