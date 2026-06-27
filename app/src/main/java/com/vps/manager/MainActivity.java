@@ -41,7 +41,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // مقداردهی اولیه libsodium
         try {
             NaCl.sodium();
         } catch (Throwable e) {
@@ -108,7 +107,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ========== ۱. ایجاد مخزن ==========
     private String createRepo(String token, String name) throws Exception {
         URL url = new URL("https://api.github.com/user/repos");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -133,7 +131,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ========== ۲. تنظیم Secret با libsodium ==========
     private void setupTailscaleSecret(String token, String repoFullName, String tailscaleKey) throws Exception {
         String urlKey = "https://api.github.com/repos/" + repoFullName + "/actions/secrets/public-key";
         HttpURLConnection connKey = (HttpURLConnection) new URL(urlKey).openConnection();
@@ -178,18 +175,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ========== متد صحیح رمزنگاری با libsodium ==========
     private String encryptWithSodium(String publicKeyBase64, String plaintext) throws Exception {
         try {
             byte[] publicKey = Base64.decode(publicKeyBase64, Base64.DEFAULT);
             byte[] plainBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-            byte[] ciphertext = Sodium.crypto_box_seal(plainBytes, publicKey);
+            
+            // crypto_box_seal نیاز به ۴ پارامتر داره:
+            // 1. متن ساده
+            // 2. کلید عمومی
+            // 3. طول متن (اختیاری)
+            // 4. بافر خروجی (اختیاری)
+            byte[] ciphertext = Sodium.crypto_box_seal(plainBytes, publicKey, plainBytes.length, null);
             return Base64.encodeToString(ciphertext, Base64.NO_WRAP);
         } catch (Exception e) {
             throw new Exception("خطا در رمزنگاری با libsodium: " + e.getMessage(), e);
         }
     }
 
-    // ========== ۳. ایجاد workflow ==========
     private void createWorkflow(String token, String repo) throws Exception {
         String workflow = "name: VPS Creator\n" +
                 "on:\n" +
@@ -227,7 +230,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ========== ۴. اجرای workflow ==========
     private String runWorkflow(String token, String repo) throws Exception {
         String url = "https://api.github.com/repos/" + repo + "/actions/workflows/vps.yml/dispatches";
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
