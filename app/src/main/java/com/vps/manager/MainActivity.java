@@ -14,6 +14,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -41,7 +42,6 @@ public class MainActivity extends Activity {
         resultText = findViewById(R.id.resultText);
         copyBtn = findViewById(R.id.copyBtn);
 
-        // مخفی کردن فیلد Tailscale (دیگه نیاز نیست)
         findViewById(R.id.tailscaleInput).setVisibility(View.GONE);
 
         findViewById(R.id.oneClickBtn).setOnClickListener(v -> startOneClick());
@@ -74,8 +74,7 @@ public class MainActivity extends Activity {
 
                 mainHandler.post(() -> {
                     statusText.setText("✅ VPS آماده است! 🎉");
-                    resultText.setText("🔑 لینک اتصال SSH:\n\n" + ssh +
-                            "\n\n📌 مخزن: " + repo);
+                    resultText.setText(ssh);
                     copyBtn.setVisibility(View.VISIBLE);
                 });
             } catch (Exception e) {
@@ -120,17 +119,48 @@ public class MainActivity extends Activity {
                 "jobs:\n" +
                 "  vps:\n" +
                 "    runs-on: ubuntu-latest\n" +
+                "    timeout-minutes: 350\n" +
                 "    steps:\n" +
-                "      - name: Checkout\n" +
+                "      - name: Checkout repo\n" +
                 "        uses: actions/checkout@v4\n" +
-                "      - name: Install Tailscale\n" +
+                "      - name: Set hostname\n" +
+                "        run: sudo hostnamectl set-hostname itz_ytansh\n" +
+                "      - name: Install prerequisites\n" +
                 "        run: |\n" +
-                "          curl -fsSL https://tailscale.com/install.sh | sh\n" +
-                "          sudo tailscale up --auth-key ${{ secrets.TAILSCALE_AUTHKEY }}\n" +
-                "      - name: Start tmate\n" +
-                "        uses: mxschmitt/action-tmate@v3\n" +
+                "          sudo apt update\n" +
+                "          sudo apt install -y tmate curl unzip sudo net-tools neofetch\n" +
+                "      - name: Install Tailscale\n" +
+                "        run: curl -fsSL https://tailscale.com/install.sh | sh\n" +
+                "      - name: Start Tailscale\n" +
+                "        run: |\n" +
+                "          sudo tailscaled &\n" +
+                "          sleep 8\n" +
+                "          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo \"Tailscale already up\"\n" +
+                "      - name: Create user\n" +
+                "        run: |\n" +
+                "          if ! id -u itz_ytansh >/dev/null 2>&1; then\n" +
+                "            sudo useradd -m -s /bin/bash itz_ytansh\n" +
+                "            echo \"itz_ytansh:itz_ytansh\" | sudo chpasswd\n" +
+                "            sudo usermod -aG sudo itz_ytansh\n" +
+                "            echo \"itz_ytansh ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/itz_ytansh\n" +
+                "          fi\n" +
+                "      - name: Start tmate and capture SSH link\n" +
+                "        id: tmate\n" +
+                "        run: |\n" +
+                "          tmate -F > tmate_output.txt 2>&1 &\n" +
+                "          sleep 10\n" +
+                "          SSH_LINK=$(cat tmate_output.txt | grep -o 'ssh -p [0-9]* [a-zA-Z0-9._-]*@[a-zA-Z0-9.-]*' | head -1)\n" +
+                "          echo \"ssh_link=$SSH_LINK\" >> $GITHUB_OUTPUT\n" +
+                "          echo \"🔑 SSH Link: $SSH_LINK\"\n" +
+                "      - name: Save SSH link to file\n" +
+                "        run: echo \"${{ steps.tmate.outputs.ssh_link }}\" > ssh_link.txt\n" +
+                "      - name: Upload SSH link as artifact\n" +
+                "        uses: actions/upload-artifact@v4\n" +
                 "        with:\n" +
-                "          limit-access-to-actor: true";
+                "          name: ssh-link\n" +
+                "          path: ssh_link.txt\n" +
+                "      - name: Sleep to keep VPS alive\n" +
+                "        run: sleep 21600";
 
         String encoded = Base64.encodeToString(workflow.getBytes(), Base64.NO_WRAP);
         String url = "https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml";
@@ -170,13 +200,60 @@ public class MainActivity extends Activity {
 
         int code = conn.getResponseCode();
         if (code == 204) {
-            return "✅ VPS workflow با موفقیت اجرا شد!\n" +
-                    "📋 لینک SSH در لاگ‌های Actions ظاهر می‌شود.\n" +
-                    "⏳ مدت زمان: 6 ساعت";
+            Thread.sleep(30000);
+            String runId = getLatestRunId(token, repo);
+            if (runId != null) {
+                String sshLink = getArtifactLink(token, repo, runId);
+                if (sshLink != null && !sshLink.isEmpty()) {
+                    return "🔑 لینک اتصال SSH:\n\n" + sshLink + "\n\n⏳ مدت زمان: 6 ساعت\n📌 مخزن: " + repo;
+                }
+            }
+            return "✅ VPS workflow با موفقیت اجرا شد!\n📋 لینک SSH در حال آماده‌سازی است...\n⏳ مدت زمان: 6 ساعت\n📌 مخزن: " + repo;
         } else {
             String err = readErrorResponse(conn);
             throw new Exception("خطا در اجرای workflow: " + code + "\n" + err);
         }
+    }
+
+    private String getLatestRunId(String token, String repo) throws Exception {
+        String url = "https://api.github.com/repos/" + repo + "/actions/runs?status=in_progress&per_page=1";
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "token " + token);
+        conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+
+        String response = readResponse(conn);
+        JSONObject obj = new JSONObject(response);
+        JSONArray runs = obj.getJSONArray("workflow_runs");
+        if (runs.length() > 0) {
+            return runs.getJSONObject(0).getString("id");
+        }
+        return null;
+    }
+
+    private String getArtifactLink(String token, String repo, String runId) throws Exception {
+        String url = "https://api.github.com/repos/" + repo + "/actions/runs/" + runId + "/artifacts";
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Authorization", "token " + token);
+        conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+
+        String response = readResponse(conn);
+        JSONObject obj = new JSONObject(response);
+        JSONArray artifacts = obj.getJSONArray("artifacts");
+
+        if (artifacts.length() > 0) {
+            String archiveUrl = artifacts.getJSONObject(0).getString("archive_download_url");
+            HttpURLConnection dlConn = (HttpURLConnection) new URL(archiveUrl).openConnection();
+            dlConn.setRequestMethod("GET");
+            dlConn.setRequestProperty("Authorization", "token " + token);
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(dlConn.getInputStream()));
+            String sshLink = br.readLine();
+            br.close();
+            return sshLink;
+        }
+        return null;
     }
 
     private String readResponse(HttpURLConnection conn) throws Exception {

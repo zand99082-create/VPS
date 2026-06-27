@@ -1,0 +1,63 @@
+name: VPS Creator
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  vps-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set hostname
+        run: sudo hostnamectl set-hostname itz_ytansh
+
+      - name: Install prerequisites
+        run: |
+          sudo apt update
+          sudo apt install -y tmate curl unzip sudo net-tools neofetch
+
+      - name: Install Tailscale
+        run: curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Start Tailscale
+        run: |
+          sudo tailscaled &
+          sleep 8
+          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo "Tailscale already up"
+
+      - name: Create user
+        run: |
+          if ! id -u itz_ytansh >/dev/null 2>&1; then
+            sudo useradd -m -s /bin/bash itz_ytansh
+            echo "itz_ytansh:itz_ytansh" | sudo chpasswd
+            sudo usermod -aG sudo itz_ytansh
+            echo "itz_ytansh ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/itz_ytansh
+          fi
+
+      - name: Start tmate and capture SSH link
+        id: tmate
+        run: |
+          tmate -F > tmate_output.txt 2>&1 &
+          sleep 10
+          SSH_LINK=$(cat tmate_output.txt | grep -o 'ssh -p [0-9]* [a-zA-Z0-9._-]*@[a-zA-Z0-9.-]*' | head -1)
+          echo "ssh_link=$SSH_LINK" >> $GITHUB_OUTPUT
+          echo "🔑 SSH Link: $SSH_LINK"
+
+      - name: Save SSH link to file
+        run: |
+          echo "${{ steps.tmate.outputs.ssh_link }}" > ssh_link.txt
+
+      - name: Upload SSH link as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-link
+          path: ssh_link.txt
+
+      - name: Sleep to keep VPS alive
+        run: sleep 21600
