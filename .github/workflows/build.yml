@@ -1,93 +1,28 @@
 name: Build APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # یعنی خودت می‌تونی از دکمه Run workflow توی گیت‌هاب شروعش کنی
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup Java
+
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
         java-version: '17'
-    
-    - name: Install Android SDK
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget unzip
-        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        unzip commandlinetools-linux-11076708_latest.zip
-        mkdir -p android-sdk/cmdline-tools
-        mv cmdline-tools android-sdk/cmdline-tools/latest
-        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
-        yes | sdkmanager --licenses
-        sdkmanager "build-tools;34.0.0" "platforms;android-34"
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-        echo "$ANDROID_SDK_ROOT/build-tools/34.0.0" >> $GITHUB_PATH
+        distribution: 'temurin'
 
-    - name: Build APK with AAPT2
-      run: |
-        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
-        export PATH=$PATH:$ANDROID_SDK_ROOT/build-tools/34.0.0
-        
-        # ساخت پوشه‌ها
-        mkdir -p build/resources build/apk build/classes build/dex
-        
-        # 1. کامپایل منابع
-        echo "📦 Compiling resources..."
-        aapt2 compile --dir app/src/main/res -o build/resources/
-        
-        # 2. لینک کردن منابع و ساخت APK
-        echo "🔗 Linking resources..."
-        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
-          --manifest app/src/main/AndroidManifest.xml \
-          -o build/apk/app.apk \
-          build/resources/*.flat
-        
-        # 3. تولید R.java
-        echo "📝 Generating R.java..."
-        aapt2 link -I $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
-          --manifest app/src/main/AndroidManifest.xml \
-          --java build/classes \
-          build/resources/*.flat
-        
-        # 4. کامپایل جاوا
-        echo "☕ Compiling Java..."
-        javac -d build/classes \
-          -cp "app/libs/*:$ANDROID_SDK_ROOT/platforms/android-34/android.jar" \
-          app/src/main/java/com/vps/manager/MainActivity.java
-        
-        # 5. تبدیل به DEX
-        echo "📱 Converting to DEX..."
-        d8 --lib $ANDROID_SDK_ROOT/platforms/android-34/android.jar \
-          --output build/dex \
-          --min-api 21 \
-          build/classes/**/*.class
-        
-        # 6. اضافه کردن DEX به APK
-        echo "📦 Adding DEX to APK..."
-        zip -j build/apk/app.apk build/dex/*.dex
-        
-        # 7. امضا
-        echo "🔑 Signing APK..."
-        keytool -genkey -v -keystore debug.keystore \
-          -alias debug -keyalg RSA -keysize 2048 \
-          -validity 10000 -storepass android -keypass android \
-          -dname "CN=Debug" -noprompt
-        apksigner sign --ks debug.keystore \
-          --ks-pass pass:android \
-          --out VPS-OneClick.apk \
-          build/apk/app.apk
-        
-        echo "✅ APK built successfully!"
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build debug APK with Gradle
+      run: ./gradlew assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: VPS-OneClick
-        path: VPS-OneClick.apk
+        name: app-debug
+        path: app/build/outputs/apk/debug/*.apk
