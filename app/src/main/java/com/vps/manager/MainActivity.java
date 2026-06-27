@@ -175,18 +175,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ========== متد صحیح رمزنگاری با libsodium ==========
     private String encryptWithSodium(String publicKeyBase64, String plaintext) throws Exception {
         try {
             byte[] publicKey = Base64.decode(publicKeyBase64, Base64.DEFAULT);
             byte[] plainBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-            
-            // crypto_box_seal نیاز به ۴ پارامتر داره:
-            // 1. متن ساده
-            // 2. کلید عمومی
-            // 3. طول متن (اختیاری)
-            // 4. بافر خروجی (اختیاری)
-            byte[] ciphertext = Sodium.crypto_box_seal(plainBytes, publicKey, plainBytes.length, null);
+            byte[] ciphertext = Sodium.crypto_box_seal(plainBytes, publicKey, null, null);
             return Base64.encodeToString(ciphertext, Base64.NO_WRAP);
         } catch (Exception e) {
             throw new Exception("خطا در رمزنگاری با libsodium: " + e.getMessage(), e);
