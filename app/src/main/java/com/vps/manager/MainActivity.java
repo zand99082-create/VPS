@@ -16,8 +16,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
-import org.libsodium.jni.NaCl;
-import org.libsodium.jni.Sodium;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -27,6 +25,16 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyAgreement;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.security.KeyPairGenerator;
+import java.security.KeyPair;
 
 public class MainActivity extends Activity {
     private EditText tokenInput, tailscaleInput;
@@ -40,12 +48,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        try {
-            NaCl.sodium();
-        } catch (Throwable e) {
-            Log.e(TAG, "Failed to load libsodium", e);
-        }
 
         tokenInput = findViewById(R.id.tokenInput);
         tailscaleInput = findViewById(R.id.tailscaleInput);
@@ -152,7 +154,7 @@ public class MainActivity extends Activity {
         Log.d(TAG, "Public key (base64): " + publicKeyBase64);
         Log.d(TAG, "Key ID: " + keyId);
 
-        String encryptedValue = encryptWithSodium(publicKeyBase64, tailscaleKey);
+        String encryptedValue = encryptWithRSA(publicKeyBase64, tailscaleKey);
 
         String url = "https://api.github.com/repos/" + repoFullName + "/actions/secrets/TAILSCALE_AUTHKEY";
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -175,14 +177,19 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String encryptWithSodium(String publicKeyBase64, String plaintext) throws Exception {
+    private String encryptWithRSA(String publicKeyBase64, String plaintext) throws Exception {
         try {
-            byte[] publicKey = Base64.decode(publicKeyBase64, Base64.DEFAULT);
-            byte[] plainBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-            byte[] ciphertext = Sodium.crypto_box_seal(plainBytes, publicKey, null, null);
-            return Base64.encodeToString(ciphertext, Base64.NO_WRAP);
+            byte[] keyBytes = Base64.decode(publicKeyBase64, Base64.DEFAULT);
+            X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            PublicKey publicKey = kf.generatePublic(spec);
+            
+            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+            byte[] encryptedBytes = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            return Base64.encodeToString(encryptedBytes, Base64.NO_WRAP);
         } catch (Exception e) {
-            throw new Exception("خطا در رمزنگاری با libsodium: " + e.getMessage(), e);
+            throw new Exception("خطا در رمزنگاری: " + e.getMessage(), e);
         }
     }
 
