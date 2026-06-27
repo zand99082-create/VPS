@@ -114,53 +114,81 @@ public class MainActivity extends Activity {
 
     private void createWorkflow(String token, String repo) throws Exception {
         String workflow = "name: VPS Creator\n" +
-                "on:\n" +
-                "  workflow_dispatch:\n" +
-                "jobs:\n" +
-                "  vps:\n" +
-                "    runs-on: ubuntu-latest\n" +
-                "    timeout-minutes: 350\n" +
-                "    steps:\n" +
-                "      - name: Checkout repo\n" +
-                "        uses: actions/checkout@v4\n" +
-                "      - name: Set hostname\n" +
-                "        run: sudo hostnamectl set-hostname itz_ytansh\n" +
-                "      - name: Install prerequisites\n" +
-                "        run: |\n" +
-                "          sudo apt update\n" +
-                "          sudo apt install -y tmate curl unzip sudo net-tools neofetch\n" +
-                "      - name: Install Tailscale\n" +
-                "        run: curl -fsSL https://tailscale.com/install.sh | sh\n" +
-                "      - name: Start Tailscale\n" +
-                "        run: |\n" +
-                "          sudo tailscaled &\n" +
-                "          sleep 8\n" +
-                "          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo \"Tailscale already up\"\n" +
-                "      - name: Create user\n" +
-                "        run: |\n" +
-                "          if ! id -u itz_ytansh >/dev/null 2>&1; then\n" +
-                "            sudo useradd -m -s /bin/bash itz_ytansh\n" +
-                "            echo \"itz_ytansh:itz_ytansh\" | sudo chpasswd\n" +
-                "            sudo usermod -aG sudo itz_ytansh\n" +
-                "            echo \"itz_ytansh ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/itz_ytansh\n" +
-                "          fi\n" +
-                "      - name: Start tmate and capture SSH link\n" +
-                "        id: tmate\n" +
-                "        run: |\n" +
-                "          tmate -F > tmate_output.txt 2>&1 &\n" +
-                "          sleep 10\n" +
-                "          SSH_LINK=$(cat tmate_output.txt | grep -o 'ssh -p [0-9]* [a-zA-Z0-9._-]*@[a-zA-Z0-9.-]*' | head -1)\n" +
-                "          echo \"ssh_link=$SSH_LINK\" >> $GITHUB_OUTPUT\n" +
-                "          echo \"🔑 SSH Link: $SSH_LINK\"\n" +
-                "      - name: Save SSH link to file\n" +
-                "        run: echo \"${{ steps.tmate.outputs.ssh_link }}\" > ssh_link.txt\n" +
-                "      - name: Upload SSH link as artifact\n" +
-                "        uses: actions/upload-artifact@v4\n" +
-                "        with:\n" +
-                "          name: ssh-link\n" +
-                "          path: ssh_link.txt\n" +
-                "      - name: Sleep to keep VPS alive\n" +
-                "        run: sleep 21600";
+            "on:\n" +
+            "  schedule:\n" +
+            "    - cron: '0 */6 * * *'\n" +
+            "  workflow_dispatch:\n" +
+            "jobs:\n" +
+            "  vps-session:\n" +
+            "    runs-on: ubuntu-latest\n" +
+            "    timeout-minutes: 350\n" +
+            "    steps:\n" +
+            "      - name: Checkout repo\n" +
+            "        uses: actions/checkout@v4\n" +
+            "      - name: Set hostname to itz_ytansh\n" +
+            "        run: sudo hostnamectl set-hostname itz_ytansh\n" +
+            "      - name: Download VPS backup (if any)\n" +
+            "        uses: actions/download-artifact@v4\n" +
+            "        with:\n" +
+            "          name: vps-backup\n" +
+            "          path: ./backup\n" +
+            "        continue-on-error: true\n" +
+            "      - name: Install prerequisites\n" +
+            "        run: |\n" +
+            "          sudo apt update\n" +
+            "          sudo apt install -y tmate curl unzip sudo net-tools neofetch\n" +
+            "      - name: Install Tailscale official script\n" +
+            "        run: |\n" +
+            "          curl -fsSL https://tailscale.com/install.sh | sh\n" +
+            "      - name: Restore backup files\n" +
+            "        run: |\n" +
+            "          if [ -f ./backup/backup.zip ]; then\n" +
+            "            unzip -o ./backup/backup.zip -d /\n" +
+            "          else\n" +
+            "            echo \"No backup found, starting fresh\"\n" +
+            "          fi\n" +
+            "      - name: Restore Tailscale state\n" +
+            "        run: |\n" +
+            "          if [ -f /opt/vps-backup/data/tailscaled.state ]; then\n" +
+            "            sudo mkdir -p /var/lib/tailscale\n" +
+            "            sudo cp /opt/vps-backup/data/tailscaled.state /var/lib/tailscale/tailscaled.state\n" +
+            "            sudo chmod 600 /var/lib/tailscale/tailscaled.state\n" +
+            "          fi\n" +
+            "      - name: Start Tailscale\n" +
+            "        run: |\n" +
+            "          sudo tailscaled &\n" +
+            "          sleep 8\n" +
+            "          sudo tailscale up --authkey ${{ secrets.TAILSCALE_AUTHKEY }} --hostname=biralo || echo \"Tailscale already up\"\n" +
+            "      - name: Create user itz_ytansh with sudo\n" +
+            "        run: |\n" +
+            "          if ! id -u itz_ytansh >/dev/null 2>&1; then\n" +
+            "            sudo useradd -m -s /bin/bash itz_ytansh\n" +
+            "            echo \"itz_ytansh:itz_ytansh\" | sudo chpasswd\n" +
+            "            sudo usermod -aG sudo itz_ytansh\n" +
+            "            echo \"itz_ytansh ALL=(ALL) NOPASSWD:ALL\" | sudo tee /etc/sudoers.d/itz_ytansh\n" +
+            "          fi\n" +
+            "      - name: Start tmate session for SSH access\n" +
+            "        uses: mxschmitt/action-tmate@v3\n" +
+            "      - name: Show Tailscale IP and tmate info\n" +
+            "        run: |\n" +
+            "          echo \"🔗 Tailscale IP:\"\n" +
+            "          tailscale ip -4 || echo \"Tailscale IP not found\"\n" +
+            "          echo \"\"\n" +
+            "          echo \"🔑 tmate SSH session:\"\n" +
+            "          cat $HOME/.tmate.sock/ssh\n" +
+            "      - name: Sleep to keep VPS alive\n" +
+            "        run: sleep 21600\n" +
+            "      - name: Backup VPS data and tailscale state\n" +
+            "        run: |\n" +
+            "          sudo mkdir -p /opt/vps-backup/data\n" +
+            "          sudo cp /var/lib/tailscale/tailscaled.state /opt/vps-backup/data/\n" +
+            "          sudo chown -R $USER:$USER /opt/vps-backup\n" +
+            "          zip -r backup.zip /opt/vps-backup\n" +
+            "      - name: Upload VPS backup artifact\n" +
+            "        uses: actions/upload-artifact@v4\n" +
+            "        with:\n" +
+            "          name: vps-backup\n" +
+            "          path: backup.zip";
 
         String encoded = Base64.encodeToString(workflow.getBytes(), Base64.NO_WRAP);
         String url = "https://api.github.com/repos/" + repo + "/contents/.github/workflows/vps.yml";
