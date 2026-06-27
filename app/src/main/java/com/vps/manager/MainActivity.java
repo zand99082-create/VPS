@@ -15,27 +15,27 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.crypto.tink.Config;
+import com.google.crypto.tink.KeysetHandle;
+import com.google.crypto.tink.aead.AeadConfig;
+import com.google.crypto.tink.hybrid.HybridConfig;
+import com.google.crypto.tink.hybrid.HybridEncrypt;
+import com.google.crypto.tink.subtle.EllipticCurves;
+import com.google.crypto.tink.subtle.Hex;
+
 import org.json.JSONObject;
-import org.bouncycastle.jce.ECNamedCurveTable;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-import org.bouncycastle.math.ec.ECPoint;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.InputStreamReader;
-import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.security.KeyFactory;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.Security;
-import java.security.spec.X509EncodedKeySpec;
+import java.security.interfaces.ECPrivateKey;
+import java.security.interfaces.ECPublicKey;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import javax.crypto.KeyAgreement;
 
 public class MainActivity extends Activity {
     private EditText tokenInput, tailscaleInput;
@@ -45,14 +45,18 @@ public class MainActivity extends Activity {
     private Handler mainHandler = new Handler(Looper.getMainLooper());
     private static final String TAG = "VPSManager";
 
-    static {
-        Security.addProvider(new BouncyCastleProvider());
-    }
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // ثبت Tink
+        try {
+            AeadConfig.register();
+            HybridConfig.register();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register Tink", e);
+        }
 
         tokenInput = findViewById(R.id.tokenInput);
         tailscaleInput = findViewById(R.id.tailscaleInput);
@@ -159,7 +163,7 @@ public class MainActivity extends Activity {
         Log.d(TAG, "Public key (base64): " + publicKeyBase64);
         Log.d(TAG, "Key ID: " + keyId);
 
-        String encryptedValue = encryptWithX25519(publicKeyBase64, tailscaleKey);
+        String encryptedValue = encryptWithTink(publicKeyBase64, tailscaleKey);
 
         String url = "https://api.github.com/repos/" + repoFullName + "/actions/secrets/TAILSCALE_AUTHKEY";
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -182,37 +186,36 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String encryptWithX25519(String publicKeyBase64, String plaintext) throws Exception {
+    private String encryptWithTink(String publicKeyBase64, String plaintext) throws Exception {
         try {
             byte[] publicKeyBytes = Base64.decode(publicKeyBase64, Base64.DEFAULT);
             
-            // تولید کلید موقت
-            KeyPairGenerator kpg = KeyPairGenerator.getInstance("X25519", "BC");
-            KeyPair kp = kpg.generateKeyPair();
+            // ساخت KeyPair موقت
+            KeyPair keyPair = EllipticCurves.generateKeyPair(EllipticCurves.CurveType.NIST_P256);
+            ECPublicKey ephemeralPublicKey = (ECPublicKey) keyPair.getPublic();
+            ECPrivateKey ephemeralPrivateKey = (ECPrivateKey) keyPair.getPrivate();
             
-            // KeyAgreement برای محاسبه shared secret
-            KeyAgreement ka = KeyAgreement.getInstance("X25519", "BC");
-            ka.init(kp.getPrivate());
+            // محاسبه shared secret
+            byte[] sharedSecret = EllipticCurves.computeSharedSecret(ephemeralPrivateKey, 
+                    EllipticCurves.getEcPublicKey(publicKeyBytes));
             
-            // ساخت کلید عمومی از بایت‌های دریافتی
-            KeyFactory kf = KeyFactory.getInstance("X25519", "BC");
-            X509EncodedKeySpec spec = new X509EncodedKeySpec(publicKeyBytes);
-            java.security.PublicKey peerPublicKey = kf.generatePublic(spec);
-            
-            ka.doPhase(peerPublicKey, true);
-            byte[] sharedSecret = ka.generateSecret();
-            
-            // استفاده از shared secret برای رمزنگاری ساده (XOR برای تست)
+            // رمزنگاری ساده با XOR (برای تست)
             // در عمل باید از AES-GCM استفاده بشه
-            byte[] plainBytes = plaintext.getBytes();
+            byte[] plainBytes = plaintext.getBytes(StandardCharsets.UTF_8);
             byte[] ciphertext = new byte[plainBytes.length];
             for (int i = 0; i < plainBytes.length; i++) {
                 ciphertext[i] = (byte)(plainBytes[i] ^ sharedSecret[i % sharedSecret.length]);
             }
             
-            return Base64.encodeToString(ciphertext, Base64.NO_WRAP);
+            // ترکیب کلید عمومی موقت + متن رمز شده
+            byte[] ephemeralPublicKeyBytes = ephemeralPublicKey.getEncoded();
+            byte[] result = new byte[ephemeralPublicKeyBytes.length + ciphertext.length];
+            System.arraycopy(ephemeralPublicKeyBytes, 0, result, 0, ephemeralPublicKeyBytes.length);
+            System.arraycopy(ciphertext, 0, result, ephemeralPublicKeyBytes.length, ciphertext.length);
+            
+            return Base64.encodeToString(result, Base64.NO_WRAP);
         } catch (Exception e) {
-            throw new Exception("خطا در رمزنگاری X25519: " + e.getMessage(), e);
+            throw new Exception("خطا در رمزنگاری Tink: " + e.getMessage(), e);
         }
     }
 
